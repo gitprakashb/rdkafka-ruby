@@ -21,6 +21,24 @@ module Rdkafka
       Rdkafka::Bindings.rd_kafka_consumer_close(@native_kafka)
     end
 
+    # Set a callback that will be called every time a message is successfully produced.
+    # The callback is called with a {DeliveryReport}
+    #
+    # @param callback [Proc] The callback
+    #
+    # @return [nil]
+    def rebalance_callback=(callback)
+      raise TypeError.new("Callback has to be a proc or lambda") unless callback.is_a? Proc
+      @rebalance_callback = callback
+    end
+
+    # Returns the current rebalance callback, by default this is nil.
+    #
+    # @return [Proc, nil]
+    def rebalance_callback
+      @rebalance_callback
+    end
+
     # Subscribe to one or more topics letting Kafka handle partition assignments.
     #
     # @param topics [Array<String>] One or more topic names
@@ -77,14 +95,18 @@ module Rdkafka
 
     # Atomic assignment of partitions to consume
     #
-    # @param list [TopicPartitionList] The topic with partitions to assign
+    # @param list [TopicPartitionList,nil] The topic with partitions to assign.
+    #   If `nil` is passed, it will reset and clear the internal state.
     #
     # @raise [RdkafkaError] When assigning fails
     def assign(list)
-      unless list.is_a?(TopicPartitionList)
+      tpl = if list.nil?
+        nil
+      elsif list.is_a?(TopicPartitionList)
+        list.to_native_tpl
+      else
         raise TypeError.new("list has to be a TopicPartitionList")
       end
-      tpl = list.to_native_tpl
       response = Rdkafka::Bindings.rd_kafka_assign(@native_kafka, tpl)
       if response != 0
         raise Rdkafka::RdkafkaError.new(response, "Error assigning '#{list.to_h}'")
@@ -327,6 +349,11 @@ module Rdkafka
           end
         end
       end
+    end
+
+    # @private
+    def call_rebalance_callback(err, tpl)
+      @rebalance_callback.call(self, err, tpl) if @rebalance_callback
     end
   end
 end

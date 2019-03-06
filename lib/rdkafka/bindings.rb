@@ -149,7 +149,21 @@ module Rdkafka
     attach_function :rd_kafka_consumer_close, [:pointer], :void, blocking: true
     attach_function :rd_kafka_offset_store, [:pointer, :int32, :int64], :int
     attach_function :rd_kafka_seek, [:pointer, :int32, :int64, :int], :int
+    callback :rebalance_cb, [:pointer, :int, :pointer, :pointer], :void
+    attach_function :rd_kafka_conf_set_rebalance_cb, [:pointer, :rebalance_cb], :void
 
+    RebalanceCallback = FFI::Function.new(
+      :void, [:pointer, :int, :pointer, :pointer]
+    ) do |client_ptr, err, partitions_ptr, opaque_ptr|
+      # Call rebalance callback on opaque
+      if opaque = Rdkafka::Config.opaques[opaque_ptr.to_i]
+        tpl = Consumer::TopicPartitionList.from_native_tpl(partitions_ptr, destroy: false)
+        err = Rdkafka::RdkafkaError.new(err)
+
+        opaque.call_rebalance_callback(err, tpl)
+      end
+    end
+    
     # Stats
 
     attach_function :rd_kafka_query_watermark_offsets, [:pointer, :string, :int, :pointer, :pointer, :int], :int

@@ -99,12 +99,26 @@ module Rdkafka
     # @raise [ClientCreationError] When the native client cannot be created
     #
     # @return [Consumer] The created consumer
-    def consumer
-      kafka = native_kafka(native_config, :rd_kafka_consumer)
+    def consumer(rebalance_cb: nil)
+      # Create opaque
+      opaque = Opaque.new
+      # Create Kafka config
+      config = native_config(opaque)
+      # Set callback to receive rebalance_cb
+      if rebalance_cb
+        Rdkafka::Bindings.rd_kafka_conf_set_rebalance_cb(config, Rdkafka::Bindings::RebalanceCallback)
+      end
+      # Create Kafka client after setting all the configuration
+      kafka = native_kafka(config, :rd_kafka_consumer)
       # Redirect the main queue to the consumer
       Rdkafka::Bindings.rd_kafka_poll_set_consumer(kafka)
       # Return consumer with Kafka client
-      Rdkafka::Consumer.new(kafka)
+      Rdkafka::Consumer.new(kafka).tap do |consumer|
+        opaque.target = consumer
+        if rebalance_cb
+          consumer.rebalance_callback = rebalance_cb
+        end
+      end
     end
 
     # Create a producer with this configuration.
@@ -122,7 +136,7 @@ module Rdkafka
       Rdkafka::Bindings.rd_kafka_conf_set_dr_msg_cb(config, Rdkafka::Bindings::DeliveryCallback)
       # Return producer with Kafka client
       Rdkafka::Producer.new(native_kafka(config, :rd_kafka_producer)).tap do |producer|
-        opaque.producer = producer
+        opaque.target = producer
       end
     end
 
@@ -203,10 +217,14 @@ module Rdkafka
 
   # @private
   class Opaque
-    attr_accessor :producer
+    attr_accessor :target
 
     def call_delivery_callback(delivery_handle)
-      producer.call_delivery_callback(delivery_handle) if producer
+      target.call_delivery_callback(delivery_handle) if target
+    end
+
+    def call_rebalance_callback(err, tpl)
+      target.call_rebalance_callback(err, tpl) if target
     end
   end
 end

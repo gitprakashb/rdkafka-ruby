@@ -2,6 +2,8 @@ module Rdkafka
   class Consumer
     # A list of topics with their partition information
     class TopicPartitionList
+      include Enumerable
+
       # Create a topic partition list.
       #
       # @param data [Hash<String => [nil,Partition]>] The topic and partion data or nil to create an empty list
@@ -29,6 +31,28 @@ module Rdkafka
       # @return [Boolean]
       def empty?
         @data.empty?
+      end
+
+      # Whether the specified topic is in this list or not
+      def has_key?(topic)
+        @data.has_key?(topic)
+      end
+
+      # Returns the partitions for the specified topic. Returns `nil` if the
+      # topic is not in the list.
+      #
+      # @return [Array<Partition>,nil]
+      def [](topic)
+        @data[topic]
+      end
+
+      # Iterates through each topic, yielding the topic name, and an array of
+      # partitions within each topic.
+      #
+      # @yieldparam topic [String] Name of the topic
+      # @yieldparam partitions [Array<Partition>] Partitions
+      def each(&block)
+        @data.each(&block)
       end
 
       # Add a topic with optionally partitions to the list.
@@ -93,7 +117,7 @@ module Rdkafka
       # @return [TopicPartitionList]
       #
       # @private
-      def self.from_native_tpl(pointer)
+      def self.from_native_tpl(pointer, destroy: true)
         # Data to be moved into the tpl
         data = {}
 
@@ -121,7 +145,7 @@ module Rdkafka
         TopicPartitionList.new(data)
       ensure
         # Destroy the tpl
-        Rdkafka::Bindings.rd_kafka_topic_partition_list_destroy(pointer)
+        Rdkafka::Bindings.rd_kafka_topic_partition_list_destroy(pointer) if destroy
       end
 
       # Create a native tpl with the contents of this object added
